@@ -7,6 +7,11 @@ from datetime import datetime
 import base64
 import tempfile
 import shutil
+import json
+import cv2
+import numpy as np
+from PIL import Image
+import io
 
 class HomeInspectorAPITester:
     def __init__(self, base_url="https://c47a728a-04bc-4679-acda-08269eb9cf07.preview.emergentagent.com"):
@@ -15,6 +20,7 @@ class HomeInspectorAPITester:
         self.tests_run = 0
         self.tests_passed = 0
         self.test_video_path = None
+        self.last_inspection_id = None
 
     def run_test(self, name, method, endpoint, expected_status, data=None, files=None):
         """Run a single API test"""
@@ -84,7 +90,7 @@ class HomeInspectorAPITester:
         return success
 
     def test_analyze_video(self):
-        """Test video analysis endpoint"""
+        """Test video analysis endpoint with focus on bounding box feature"""
         if not self.test_video_path or not os.path.exists(self.test_video_path):
             print("❌ No test video available")
             return False
@@ -108,14 +114,103 @@ class HomeInspectorAPITester:
                     print(f"Frames analyzed: {response.get('summary', {}).get('frames_analyzed', 0)}")
                     print(f"Severity: {response.get('summary', {}).get('severity', 'unknown')}")
                     
+                    # Store the inspection ID for later use
+                    self.last_inspection_id = response.get('id')
+                    
                     # Check if we have defects_found in the response
                     if 'defects_found' in response and len(response['defects_found']) > 0:
-                        print(f"First frame defects: {response['defects_found'][0].get('defects', [])}")
+                        # Test for bounding box data in the response
+                        self.test_bounding_box_data(response['defects_found'])
                     
                 return success
                 
         except Exception as e:
             print(f"❌ Error testing video analysis: {str(e)}")
+            return False
+
+    def test_bounding_box_data(self, frames_data):
+        """Test if frames contain bounding box data for defects"""
+        print("\n🔍 Testing Bounding Box Data in Frames...")
+        self.tests_run += 1
+        
+        try:
+            has_boxes = False
+            frames_with_boxes = 0
+            total_boxes = 0
+            defect_types_with_boxes = set()
+            
+            for frame in frames_data:
+                if 'defects' in frame:
+                    for defect in frame['defects']:
+                        if 'boxes' in defect and defect['boxes']:
+                            has_boxes = True
+                            frames_with_boxes += 1
+                            total_boxes += len(defect['boxes'])
+                            defect_types_with_boxes.add(defect['type'])
+                            break
+            
+            if has_boxes:
+                self.tests_passed += 1
+                print(f"✅ Passed - Found bounding box data in {frames_with_boxes} frames")
+                print(f"Total boxes found: {total_boxes}")
+                print(f"Defect types with boxes: {', '.join(defect_types_with_boxes)}")
+                return True
+            else:
+                print("❌ Failed - No bounding box data found in any frames")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error testing bounding box data: {str(e)}")
+            return False
+
+    def test_frame_annotations(self, frames_data):
+        """Test if frames have visual annotations (colored boxes)"""
+        print("\n🔍 Testing Visual Annotations in Frames...")
+        self.tests_run += 1
+        
+        try:
+            frames_with_annotations = 0
+            
+            for frame in frames_data:
+                if 'frame_image' in frame and frame['frame_image']:
+                    # Decode base64 image
+                    img_data = base64.b64decode(frame['frame_image'])
+                    img = Image.open(io.BytesIO(img_data))
+                    img_array = np.array(img)
+                    
+                    # Check if the image has colored rectangles
+                    # This is a simple heuristic - we look for rectangular patterns of colors
+                    # that match our defect color scheme
+                    
+                    # Convert to HSV for better color detection
+                    hsv = cv2.cvtColor(img_array, cv2.COLOR_RGB2HSV)
+                    
+                    # Define color ranges for our defect colors
+                    color_ranges = [
+                        # Red (cracks)
+                        (np.array([0, 100, 100]), np.array([10, 255, 255])),
+                        # Blue (water damage)
+                        (np.array([100, 100, 100]), np.array([130, 255, 255])),
+                        # Green (mold)
+                        (np.array([40, 100, 100]), np.array([80, 255, 255])),
+                    ]
+                    
+                    for lower, upper in color_ranges:
+                        mask = cv2.inRange(hsv, lower, upper)
+                        if np.sum(mask) > 1000:  # Threshold for detection
+                            frames_with_annotations += 1
+                            break
+            
+            if frames_with_annotations > 0:
+                self.tests_passed += 1
+                print(f"✅ Passed - Found visual annotations in {frames_with_annotations} frames")
+                return True
+            else:
+                print("❌ Failed - No visual annotations found in any frames")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error testing visual annotations: {str(e)}")
             return False
 
     def test_get_inspections(self):
@@ -140,6 +235,11 @@ class HomeInspectorAPITester:
         )
         if success:
             print(f"Retrieved inspection: {response.get('id')}")
+            
+            # Test bounding box data in this specific inspection
+            if 'defects_found' in response:
+                self.test_bounding_box_data(response['defects_found'])
+                self.test_frame_annotations(response['defects_found'])
         return success
 
     def cleanup(self):
@@ -166,7 +266,7 @@ def main():
             print("❌ Failed to create test video, stopping tests")
             return 1
             
-        # Test video analysis
+        # Test video analysis with bounding box feature
         if not tester.test_analyze_video():
             print("❌ Video analysis test failed")
             # Continue with other tests
@@ -177,7 +277,9 @@ def main():
             # Continue with other tests
             
         # If we have a successful video analysis, test getting that inspection
-        # This would require storing the inspection ID from the analyze_video response
+        if tester.last_inspection_id:
+            if not tester.test_get_inspection_by_id(tester.last_inspection_id):
+                print("❌ Get inspection by ID test failed")
         
         # Print results
         print(f"\n📊 Tests passed: {tester.tests_passed}/{tester.tests_run}")
