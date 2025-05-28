@@ -179,40 +179,104 @@ def detect_defects_with_clip(image, clip_model, clip_processor):
         logging.error(f"CLIP detection error: {e}")
         return []
 
+def draw_defect_boxes(image, defects_with_boxes):
+    """Draw colored bounding boxes on image for detected defects"""
+    annotated_image = image.copy()
+    
+    # Define colors for different defect types
+    colors = {
+        'cracks': (255, 0, 0),      # Red
+        'water_damage': (0, 0, 255), # Blue
+        'mold': (0, 255, 0),        # Green
+        'paint': (255, 255, 0),     # Yellow
+        'rust': (255, 165, 0),      # Orange
+        'tiles': (128, 0, 128),     # Purple
+        'flooring': (255, 192, 203)  # Pink
+    }
+    
+    for defect_info in defects_with_boxes:
+        defect_type = defect_info['type']
+        boxes = defect_info.get('boxes', [])
+        
+        # Get color for this defect type
+        color = colors.get(defect_type.split()[0], (255, 255, 255))  # Default white
+        
+        # Draw bounding boxes
+        for box in boxes:
+            x, y, w, h = box
+            # Draw rectangle
+            cv2.rectangle(annotated_image, (x, y), (x + w, y + h), color, 2)
+            
+            # Add label
+            label = f"{defect_type}: {defect_info['confidence']:.2f}"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+            
+            # Background for text
+            cv2.rectangle(annotated_image, (x, y - label_size[1] - 10), 
+                         (x + label_size[0], y), color, -1)
+            
+            # Text
+            cv2.putText(annotated_image, label, (x, y - 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    
+    return annotated_image
+
 def analyze_frame(frame_data):
     """Analyze a single frame for defects"""
     frame_number, image_array = frame_data
     
     defects = []
+    defects_with_boxes = []
     
     # 1. Crack detection with OpenCV
-    has_cracks, crack_confidence, crack_contours = detect_cracks_opencv(image_array)
+    has_cracks, crack_confidence, crack_contours, crack_boxes = detect_cracks_opencv(image_array)
     if has_cracks:
-        defects.append({
+        defect_info = {
             "type": "cracks",
             "confidence": crack_confidence,
-            "description": f"Potential cracks detected with {crack_confidence:.2f} confidence"
-        })
+            "description": f"Potential cracks detected with {crack_confidence:.2f} confidence",
+            "boxes": crack_boxes
+        }
+        defects.append(defect_info)
+        defects_with_boxes.append(defect_info)
     
     # 2. Water damage detection
-    has_water_damage, water_confidence = detect_water_damage(image_array)
+    has_water_damage, water_confidence, water_boxes = detect_water_damage(image_array)
     if has_water_damage:
-        defects.append({
+        defect_info = {
             "type": "water_damage", 
             "confidence": water_confidence,
-            "description": f"Water damage detected with {water_confidence:.2f} confidence"
-        })
+            "description": f"Water damage detected with {water_confidence:.2f} confidence",
+            "boxes": water_boxes
+        }
+        defects.append(defect_info)
+        defects_with_boxes.append(defect_info)
     
-    # 3. CLIP-based defect detection
+    # 3. CLIP-based defect detection (no specific boxes for CLIP, use general areas)
     if clip_model and clip_processor:
         clip_defects = detect_defects_with_clip(image_array, clip_model, clip_processor)
-        defects.extend(clip_defects)
+        for clip_defect in clip_defects:
+            # For CLIP detections, create a general bounding box (center area)
+            h, w = image_array.shape[:2]
+            general_box = [(w//4, h//4, w//2, h//2)]  # Center area
+            
+            defect_info = {
+                "type": clip_defect["type"],
+                "confidence": clip_defect["confidence"],
+                "description": f"{clip_defect['type']} detected with {clip_defect['confidence']:.2f} confidence",
+                "boxes": general_box
+            }
+            defects.append(defect_info)
+            defects_with_boxes.append(defect_info)
     
     # Calculate overall confidence
     overall_confidence = max([d["confidence"] for d in defects]) if defects else 0
     
-    # Convert frame to base64 for frontend display
-    pil_image = Image.fromarray(image_array)
+    # Create annotated image with bounding boxes
+    annotated_image = draw_defect_boxes(image_array, defects_with_boxes)
+    
+    # Convert annotated frame to base64 for frontend display
+    pil_image = Image.fromarray(annotated_image)
     buffer = io.BytesIO()
     pil_image.save(buffer, format='JPEG')
     frame_base64 = base64.b64encode(buffer.getvalue()).decode()
