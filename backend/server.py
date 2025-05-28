@@ -115,6 +115,17 @@ def detect_water_damage(image):
     # Combine masks
     water_mask = cv2.bitwise_or(brown_mask, dark_mask)
     
+    # Find contours for bounding boxes
+    contours, _ = cv2.findContours(water_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Get bounding boxes for water damage areas
+    damage_boxes = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 500:  # Minimum area for water damage
+            x, y, w, h = cv2.boundingRect(contour)
+            damage_boxes.append((x, y, w, h))
+    
     # Calculate percentage of affected area
     total_pixels = image.shape[0] * image.shape[1]
     affected_pixels = cv2.countNonZero(water_mask)
@@ -123,7 +134,7 @@ def detect_water_damage(image):
     has_damage = damage_percentage > 0.05  # 5% threshold
     confidence = min(damage_percentage * 5, 1.0)
     
-    return has_damage, confidence
+    return has_damage, confidence, damage_boxes
 
 def detect_defects_with_clip(image, clip_model, clip_processor):
     """Use CLIP model to classify various defects"""
