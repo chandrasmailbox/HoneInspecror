@@ -83,6 +83,7 @@ def detect_cracks_opencv(image):
     
     # Filter contours that look like cracks (long, thin lines)
     crack_contours = []
+    crack_boxes = []
     for contour in contours:
         area = cv2.contourArea(contour)
         if area > 100:  # Minimum area threshold
@@ -91,9 +92,10 @@ def detect_cracks_opencv(image):
             aspect_ratio = max(w, h) / min(w, h)
             if aspect_ratio > 3:  # Long, thin objects
                 crack_contours.append(contour)
+                crack_boxes.append((x, y, w, h))
     
     confidence = min(len(crack_contours) * 0.2, 1.0)
-    return len(crack_contours) > 0, confidence, crack_contours
+    return len(crack_contours) > 0, confidence, crack_contours, crack_boxes
 
 def detect_water_damage(image):
     """Detect water damage using color analysis"""
