@@ -27,8 +27,9 @@ COPY --from=frontend-build /app/build /usr/share/nginx/html
 COPY --from=backend /app /backend
 # Copy nginx config and entrypoint
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY entrypoint.sh /entrypoint.sh
+COPY .devcontainer/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+CMD ["/entrypoint.sh"]
 
 # If you need to run the backend, do so with python3 from /backend
 # Alpine's python is not used for pip installs; all python code is in /backend from the python:3.10-slim build
