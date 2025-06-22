@@ -1,0 +1,30 @@
+Certainly! Here's a comprehensive prompt you can use to ask an AI (like ChatGPT or another code generation tool) to generate a complete codebase for your HomeInspector AI app:
+
+Prompt:
+
+"Please generate a complete, working example of a HomeInspector AI application that accepts user-uploaded videos and detects house defects such as mold, cracks, water leaks, and paint problems. The application should include the following components:
+
+Backend API:
+
+Accepts video uploads via HTTP POST.
+Processes videos by extracting frames.
+Runs defect detection using a pre-trained object detection model (e.g., YOLOv5 or similar).
+Returns annotated images/video or JSON with detected defects, locations, and confidence scores.
+
+Model:
+
+Use transfer learning with a pre-trained object detection model fine-tuned on relevant defect datasets.
+Include code for loading the model, running inference on frames, and aggregating results.
+
+Frontend Interface:
+
+Simple web page allowing users to upload videos.
+Displays processed results with bounding boxes and labels overlaid on key frames or videos.
+
+Additional features:
+
+Basic error handling.
+Clear comments explaining each part of the code.
+
+Use Python for backend (FastAPI or Flask), HTML/JavaScript for frontend, OpenCV for video processing, and PyTorch/TensorFlow for the model. Provide instructions on how to set up dependencies and run the app locally."
+
